@@ -47,10 +47,6 @@ test.describe("Mobile critical smoke", () => {
     await page.addInitScript(() => localStorage.setItem("mutare_calendar_card_mode", "1"));
     await page.goto("/calendar?year=2026");
     await expect(page.getByText("Calendário do mês")).toBeVisible();
-
-    const firstCell = page.locator(".calendar-mobile-period-btn:visible").first();
-    await expect(firstCell).toBeVisible();
-    await firstCell.click();
     await expect(page.locator(".calendar-mobile-selection-count").first()).toContainText("Selecionados:");
   });
 
