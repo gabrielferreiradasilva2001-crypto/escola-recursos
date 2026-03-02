@@ -190,6 +190,7 @@ export default function ManagementTabs({
   const [subSearch, setSubSearch] = useState("");
   const [subAreaFilter, setSubAreaFilter] = useState("");
   const [subSearchMsg, setSubSearchMsg] = useState("");
+  const [subsVisibleCount, setSubsVisibleCount] = useState(10);
 
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [matLoading, setMatLoading] = useState(false);
@@ -231,6 +232,7 @@ export default function ManagementTabs({
   const [pubSavingBatch, setPubSavingBatch] = useState("");
   const [pubDownloadingBatch, setPubDownloadingBatch] = useState("");
   const [pubGalleryBatchId, setPubGalleryBatchId] = useState<string | null>(null);
+  const [pubVisibleCount, setPubVisibleCount] = useState(8);
   const [showSearchMaterials, setShowSearchMaterials] = useState(false);
   const [showSearchPrints, setShowSearchPrints] = useState(false);
   const [showSearchSubstitutes, setShowSearchSubstitutes] = useState(false);
@@ -275,6 +277,46 @@ export default function ManagementTabs({
   const subsResultsRef = useRef<HTMLDivElement | null>(null);
   const matsResultsRef = useRef<HTMLDivElement | null>(null);
   const printResultsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem("mutare_management_mobile_prefs_v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        showSearchMaterials?: boolean;
+        showSearchPrints?: boolean;
+        showSearchSubstitutes?: boolean;
+        subsVisibleCount?: number;
+        pubVisibleCount?: number;
+      };
+      if (typeof parsed.showSearchMaterials === "boolean") setShowSearchMaterials(parsed.showSearchMaterials);
+      if (typeof parsed.showSearchPrints === "boolean") setShowSearchPrints(parsed.showSearchPrints);
+      if (typeof parsed.showSearchSubstitutes === "boolean") setShowSearchSubstitutes(parsed.showSearchSubstitutes);
+      if (Number.isFinite(parsed.subsVisibleCount) && Number(parsed.subsVisibleCount) >= 10) {
+        setSubsVisibleCount(Number(parsed.subsVisibleCount));
+      }
+      if (Number.isFinite(parsed.pubVisibleCount) && Number(parsed.pubVisibleCount) >= 8) {
+        setPubVisibleCount(Number(parsed.pubVisibleCount));
+      }
+    } catch {
+      // ignore storage parse errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(
+      "mutare_management_mobile_prefs_v1",
+      JSON.stringify({
+        showSearchMaterials,
+        showSearchPrints,
+        showSearchSubstitutes,
+        subsVisibleCount,
+        pubVisibleCount,
+      })
+    );
+  }, [showSearchMaterials, showSearchPrints, showSearchSubstitutes, subsVisibleCount, pubVisibleCount]);
 
   const years = useMemo(() => {
     const current = new Date().getFullYear();
@@ -1010,7 +1052,10 @@ export default function ManagementTabs({
     });
   }, [subs, subSearch, subAreaFilter]);
 
-  const subsDisplay = useMemo(() => filteredSubs.slice(0, 5), [filteredSubs]);
+  const subsDisplay = useMemo(
+    () => filteredSubs.slice(0, Math.max(10, subsVisibleCount)),
+    [filteredSubs, subsVisibleCount]
+  );
 
   const filteredMaterials = useMemo(() => {
     const q = matSearch.trim().toLowerCase();
@@ -1072,6 +1117,16 @@ export default function ManagementTabs({
     };
   }, [matPeriod]);
   const PeriodIcon = periodTheme.icon;
+  const loadingCards = (count = 3) => (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`mgmt-skeleton-${idx}`}
+          className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-slate-100/90"
+        />
+      ))}
+    </div>
+  );
 
   useEffect(() => {
     const hasQuery = !!subSearch.trim() || !!subAreaFilter;
@@ -1088,6 +1143,10 @@ export default function ManagementTabs({
     const t = window.setTimeout(() => setSubSearchMsg(""), 2500);
     return () => window.clearTimeout(t);
   }, [subSearch, subAreaFilter, subsDisplay.length]);
+
+  useEffect(() => {
+    setSubsVisibleCount(10);
+  }, [subSearch, subAreaFilter]);
 
   useEffect(() => {
     const hasQuery = !!matSearch.trim() || !!matSearchDate;
@@ -1139,6 +1198,15 @@ export default function ManagementTabs({
     } finally {
       setSubsLoading(false);
     }
+  }
+
+  function clearSubstituteForm() {
+    setSubsMsg("");
+    setSubName("");
+    setSubArea("");
+    setSubAreaOther("");
+    setSubPhone("");
+    setSubNotes("");
   }
 
   async function deleteSubstitute(id: string) {
@@ -1486,10 +1554,17 @@ export default function ManagementTabs({
     });
     return Array.from(map.values());
   }, [pubRows]);
+  const publicationsDisplay = useMemo(
+    () => groupedPublications.slice(0, Math.max(8, pubVisibleCount)),
+    [groupedPublications, pubVisibleCount]
+  );
   const activeGalleryPublication = useMemo(
     () => groupedPublications.find((x) => x.batchId === pubGalleryBatchId) ?? null,
     [groupedPublications, pubGalleryBatchId]
   );
+  useEffect(() => {
+    setPubVisibleCount(8);
+  }, [pubStatusFilter, groupedPublications.length]);
   const financeFiltered = useMemo(() => {
     const monthFilter = financeRange === "annual" ? 0 : financeMonth;
     return financeRows.filter((item) => {
@@ -1717,6 +1792,21 @@ export default function ManagementTabs({
     setFinMsg("Lançamento financeiro registrado.");
   }
 
+  function clearFinanceForm() {
+    setFinMsg("");
+    setFinDate("");
+    setFinDescription("");
+    setFinAmount("");
+    setFinType("entry");
+    setFinCategory("cash");
+    setFinMethod("Dinheiro");
+    setFinNotes("");
+    setFinCustomCategory("");
+    setFinCustomCategoryNew("");
+    setFinDueDate("");
+    setFinPaid(false);
+  }
+
   function removeFinanceRecord(id: string) {
     setFinanceRows((prev) => prev.filter((item) => item.id !== id));
   }
@@ -1827,8 +1917,10 @@ export default function ManagementTabs({
     );
   }
 
+  const showMobileActionBar = tab === "substitutes" || tab === "materials" || tab === "finance";
+
   return (
-    <main className="min-h-screen text-slate-900 relative">
+    <main className={`management-page min-h-screen text-slate-900 relative ${showMobileActionBar ? "pb-28 sm:pb-0" : ""}`}>
       <HomeTopButton />
       <div className={`pointer-events-none fixed inset-0 z-0 ${periodTheme.wrapper}`}>
         <div className={`absolute inset-0 ${periodTheme.overlay}`} />
@@ -1857,8 +1949,14 @@ export default function ManagementTabs({
         <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-emerald-100/55 blur-3xl" />
       </div>
 
-      <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
         <style jsx global>{`
+          @media (max-width: 640px) {
+            .management-page button,
+            .management-page a.inline-flex {
+              min-height: 44px;
+            }
+          }
           .period-sun {
             position: absolute;
             left: 8%;
@@ -2000,7 +2098,7 @@ export default function ManagementTabs({
           }
         `}</style>
         <div
-          className="relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_18px_55px_rgba(15,23,42,0.14)] backdrop-blur"
+          className="relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.14)] backdrop-blur sm:p-6"
           style={{
             backgroundImage: "url(/back-sala2.png)",
             backgroundSize: "cover",
@@ -2009,7 +2107,7 @@ export default function ManagementTabs({
         >
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm" />
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-100/60 via-white/0 to-sky-100/60" />
-          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:text-left text-center">
+          <div className="relative flex flex-col gap-3 text-center sm:flex-row sm:items-start sm:justify-between sm:text-left">
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
               <Link
                 href="/portal"
@@ -2061,11 +2159,11 @@ export default function ManagementTabs({
           </div>
         </div>
 
-        <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-5 -mx-1 flex gap-2 overflow-x-auto px-1 pb-2 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setTab("materials")}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold ${
+            className={`shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs font-extrabold ${
               tab === "materials"
                 ? "bg-sky-100 text-sky-800 ring-1 ring-sky-200"
                 : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -2076,7 +2174,7 @@ export default function ManagementTabs({
           <button
             type="button"
             onClick={() => setTab("prints")}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold ${
+            className={`shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs font-extrabold ${
               tab === "prints"
                 ? "bg-amber-100 text-amber-800 ring-1 ring-amber-200"
                 : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -2087,7 +2185,7 @@ export default function ManagementTabs({
           <button
             type="button"
             onClick={() => setTab("substitutes")}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold ${
+            className={`shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs font-extrabold ${
               tab === "substitutes"
                 ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
                 : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -2098,7 +2196,7 @@ export default function ManagementTabs({
           <button
             type="button"
             onClick={() => setTab("publications")}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold ${
+            className={`shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs font-extrabold ${
               tab === "publications"
                 ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
                 : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -2109,7 +2207,7 @@ export default function ManagementTabs({
           <button
             type="button"
             onClick={() => setTab("finance")}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-extrabold ${
+            className={`shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs font-extrabold ${
               tab === "finance"
                 ? "bg-green-100 text-green-800 ring-1 ring-green-200"
                 : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -2119,7 +2217,7 @@ export default function ManagementTabs({
           </button>
         </div>
 
-        <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-black text-slate-900">Panorama de agendamentos</div>
@@ -2239,7 +2337,7 @@ export default function ManagementTabs({
         </section>
 
         {tab === "substitutes" ? (
-          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
             <div className="relative">
             <h2 className="text-base font-black">Professores substitutos</h2>
             <p className="mt-1 text-xs font-bold text-slate-500">Cadastro e pesquisa por área.</p>
@@ -2288,7 +2386,7 @@ export default function ManagementTabs({
                   type="button"
                   onClick={addSubstitute}
                   disabled={subsLoading}
-                  className="inline-flex h-9 w-fit items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 px-3 text-xs font-black text-white shadow-sm shadow-emerald-500/20 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md active:scale-[0.99] disabled:opacity-60"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 px-3 text-xs font-black text-white shadow-sm shadow-emerald-500/20 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md active:scale-[0.99] disabled:opacity-60 sm:w-fit"
                 >
                   {subsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Salvar
@@ -2343,29 +2441,40 @@ export default function ManagementTabs({
 
             <div ref={subsResultsRef} className="mt-5 space-y-2">
               {subsLoading ? (
-                <div className="text-sm font-extrabold text-slate-500">Carregando...</div>
+                loadingCards(3)
               ) : subsDisplay.length ? (
-                subsDisplay.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"
-                  >
-                    <div>
-                      <div className="text-sm font-black">{s.name}</div>
-                      <div className="text-xs font-extrabold text-slate-600">{s.area}</div>
-                      {s.phone ? <div className="text-xs font-bold text-slate-500">{s.phone}</div> : null}
-                      {s.notes ? <div className="text-xs font-bold text-slate-500">{s.notes}</div> : null}
+                <>
+                  {subsDisplay.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <div>
+                        <div className="text-sm font-black">{s.name}</div>
+                        <div className="text-xs font-extrabold text-slate-600">{s.area}</div>
+                        {s.phone ? <div className="text-xs font-bold text-slate-500">{s.phone}</div> : null}
+                        {s.notes ? <div className="text-xs font-bold text-slate-500">{s.notes}</div> : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteSubstitute(s.id)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-red-200 bg-red-50 p-2 text-red-700"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
+                  ))}
+                  {subsDisplay.length < filteredSubs.length ? (
                     <button
                       type="button"
-                      onClick={() => deleteSubstitute(s.id)}
-                      className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 p-2 text-red-700"
-                      title="Excluir"
+                      onClick={() => setSubsVisibleCount((prev) => prev + 10)}
+                      className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition-all duration-200 hover:bg-slate-50"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      Carregar mais substitutos ({filteredSubs.length - subsDisplay.length} restantes)
                     </button>
-                  </div>
-                ))
+                  ) : null}
+                </>
               ) : (
                 <div className="text-sm font-extrabold text-slate-500">Nenhum substituto cadastrado.</div>
               )}
@@ -2375,7 +2484,7 @@ export default function ManagementTabs({
         ) : null}
 
         {tab === "materials" ? (
-          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-black">Materiais entregues</h2>
@@ -2775,7 +2884,7 @@ export default function ManagementTabs({
 
             <div ref={matsResultsRef} className="mt-5 space-y-2">
               {matLoading ? (
-                <div className="text-sm font-extrabold text-slate-500">Carregando...</div>
+                loadingCards(4)
               ) : materialsDisplay.length ? (
                 materialsDisplay.map((m) => (
                   <div
@@ -2906,7 +3015,7 @@ export default function ManagementTabs({
                 <button
                   type="button"
                   onClick={exportMaterialsPdf}
-                  className="inline-flex h-9 w-fit items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50 sm:w-fit"
                 >
                   <FileDown className="h-4 w-4" />
                   Exportar PDF
@@ -2917,7 +3026,7 @@ export default function ManagementTabs({
         ) : null}
 
         {tab === "finance" ? (
-          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-black">Gestão financeira</h2>
@@ -2925,7 +3034,7 @@ export default function ManagementTabs({
                   Controle simples de entradas, saídas e contas a pagar.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
                 <select
                   value={reportSchoolId}
                   onChange={(e) => setReportSchoolId(e.target.value)}
@@ -3219,7 +3328,7 @@ export default function ManagementTabs({
                 <button
                   type="button"
                   onClick={addFinanceRecord}
-                  className="inline-flex h-9 items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-4 text-xs font-black text-white shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md"
+                  className="inline-flex h-9 w-full items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-4 text-xs font-black text-white shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md sm:w-fit"
                 >
                   Registrar lançamento
                 </button>
@@ -3259,7 +3368,7 @@ export default function ManagementTabs({
                           <div className="mt-1 text-xs font-bold text-slate-500">{item.notes}</div>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-extrabold ${
                             item.type === "entry"
@@ -3299,7 +3408,7 @@ export default function ManagementTabs({
         ) : null}
 
         {tab === "prints" ? (
-          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-black">Controle de impressão</h2>
@@ -3313,7 +3422,7 @@ export default function ManagementTabs({
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="mt-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {visiblePrintLocations.map((loc) => (
                 <button
                   key={loc}
@@ -3323,7 +3432,7 @@ export default function ManagementTabs({
                       adminScope.allowedLocations.length ? loc : prev === loc ? "" : loc
                     )
                   }
-                  className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                     printLocationFilter === loc
                       ? "bg-sky-100 text-sky-800 ring-1 ring-sky-200"
                       : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3332,11 +3441,11 @@ export default function ManagementTabs({
                   {loc}
                 </button>
               ))}
-              <div className="flex w-full flex-col items-stretch gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
+              <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
                 <button
                   type="button"
                   onClick={() => setPrintStatusFilter("pending")}
-                  className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                  className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                     printStatusFilter === "pending"
                       ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
                       : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3347,7 +3456,7 @@ export default function ManagementTabs({
                 <button
                   type="button"
                   onClick={() => setPrintStatusFilter("printed")}
-                  className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                  className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                     printStatusFilter === "printed"
                       ? "bg-slate-200 text-slate-700 ring-1 ring-slate-300"
                       : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3396,7 +3505,7 @@ export default function ManagementTabs({
 
             <div ref={printResultsRef} className="mt-4 space-y-2">
               {printLoading ? (
-                <div className="text-sm font-extrabold text-slate-500">Carregando...</div>
+                loadingCards(4)
               ) : pagedPrintJobs.length ? (
                 pagedPrintJobs.map((job) => (
                   <div
@@ -3448,7 +3557,7 @@ export default function ManagementTabs({
                         {new Date(job.created_at).toLocaleString("pt-BR")}
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-extrabold ${
                           job.printed
@@ -3479,7 +3588,7 @@ export default function ManagementTabs({
                           )}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50"
+                          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50 sm:w-auto"
                         >
                           Abrir
                         </a>
@@ -3489,7 +3598,7 @@ export default function ManagementTabs({
                           type="button"
                           onClick={() => downloadPrintJob(job)}
                           disabled={printDownloadingId === job.id}
-                          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:opacity-60"
+                          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:opacity-60 sm:w-auto"
                         >
                           {printDownloadingId === job.id ? "Baixando..." : "Baixar envio"}
                         </button>
@@ -3505,11 +3614,11 @@ export default function ManagementTabs({
             </div>
 
             {totalPrintPages > 1 ? (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <div className="mt-4 flex items-center justify-start gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:justify-center">
                 <button
                   type="button"
                   onClick={() => setPrintPage((p) => Math.max(1, p - 1))}
-                  className="h-9 rounded-full px-3 text-xs font-extrabold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                  className="h-9 shrink-0 rounded-full px-3 text-xs font-extrabold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                   disabled={printPage === 1}
                 >
                   Anterior
@@ -3519,7 +3628,7 @@ export default function ManagementTabs({
                     key={p}
                     type="button"
                     onClick={() => setPrintPage(p)}
-                    className={`h-9 w-9 rounded-full text-xs font-extrabold ${
+                    className={`h-9 w-9 shrink-0 rounded-full text-xs font-extrabold ${
                       p === printPage
                         ? "bg-emerald-500 text-white shadow-sm"
                         : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3531,7 +3640,7 @@ export default function ManagementTabs({
                 <button
                   type="button"
                   onClick={() => setPrintPage((p) => Math.min(totalPrintPages, p + 1))}
-                  className="h-9 rounded-full px-3 text-xs font-extrabold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                  className="h-9 shrink-0 rounded-full px-3 text-xs font-extrabold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                   disabled={printPage === totalPrintPages}
                 >
                   Próximo
@@ -3542,7 +3651,7 @@ export default function ManagementTabs({
         ) : null}
 
         {tab === "publications" ? (
-          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-black">Publicações da escola</h2>
@@ -3556,11 +3665,11 @@ export default function ManagementTabs({
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="mt-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 onClick={() => setPubStatusFilter("pending")}
-                className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                   pubStatusFilter === "pending"
                     ? "bg-amber-100 text-amber-800 ring-1 ring-amber-200"
                     : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3571,7 +3680,7 @@ export default function ManagementTabs({
               <button
                 type="button"
                 onClick={() => setPubStatusFilter("published")}
-                className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                   pubStatusFilter === "published"
                     ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
                     : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3582,7 +3691,7 @@ export default function ManagementTabs({
               <button
                 type="button"
                 onClick={() => setPubStatusFilter("rejected")}
-                className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                   pubStatusFilter === "rejected"
                     ? "bg-red-100 text-red-700 ring-1 ring-red-200"
                     : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3593,7 +3702,7 @@ export default function ManagementTabs({
               <button
                 type="button"
                 onClick={() => setPubStatusFilter("all")}
-                className={`rounded-full px-3 py-2 text-xs font-extrabold ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-extrabold ${
                   pubStatusFilter === "all"
                     ? "bg-slate-200 text-slate-700 ring-1 ring-slate-300"
                     : "bg-white text-slate-600 ring-1 ring-slate-200"
@@ -3611,9 +3720,9 @@ export default function ManagementTabs({
 
             <div className="mt-4 space-y-3">
               {pubLoading ? (
-                <div className="text-sm font-extrabold text-slate-500">Carregando...</div>
+                loadingCards(4)
               ) : groupedPublications.length ? (
-                groupedPublications.map((item) => (
+                publicationsDisplay.map((item) => (
                   <div key={item.batchId} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
@@ -3669,19 +3778,19 @@ export default function ManagementTabs({
                       ))}
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
                       <button
                         type="button"
                         onClick={() => downloadPublicationBatch(item)}
                         disabled={pubDownloadingBatch === item.batchId}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 disabled:opacity-60"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 disabled:opacity-60 sm:w-auto"
                       >
                         {pubDownloadingBatch === item.batchId ? "Baixando..." : "Baixar fotos"}
                       </button>
                       <button
                         type="button"
                         onClick={() => openPublicationGallery(item)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 sm:w-auto"
                       >
                         Abrir galeria do envio
                       </button>
@@ -3689,7 +3798,7 @@ export default function ManagementTabs({
                         type="button"
                         onClick={() => updatePublicationStatus(item.batchId, "published")}
                         disabled={pubSavingBatch === item.batchId}
-                        className="rounded-xl bg-emerald-500 px-3 py-2 text-xs font-black text-white disabled:opacity-60"
+                        className="w-full rounded-xl bg-emerald-500 px-3 py-2 text-xs font-black text-white disabled:opacity-60 sm:w-auto"
                       >
                         Publicar
                       </button>
@@ -3697,7 +3806,7 @@ export default function ManagementTabs({
                         type="button"
                         onClick={() => updatePublicationStatus(item.batchId, "rejected")}
                         disabled={pubSavingBatch === item.batchId}
-                        className="rounded-xl bg-red-500 px-3 py-2 text-xs font-black text-white disabled:opacity-60"
+                        className="w-full rounded-xl bg-red-500 px-3 py-2 text-xs font-black text-white disabled:opacity-60 sm:w-auto"
                       >
                         Rejeitar
                       </button>
@@ -3705,7 +3814,7 @@ export default function ManagementTabs({
                         type="button"
                         onClick={() => updatePublicationStatus(item.batchId, "pending")}
                         disabled={pubSavingBatch === item.batchId}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 disabled:opacity-60"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 disabled:opacity-60 sm:w-auto"
                       >
                         Voltar para análise
                       </button>
@@ -3715,20 +3824,63 @@ export default function ManagementTabs({
               ) : (
                 <div className="text-sm font-extrabold text-slate-500">Nenhuma atividade encontrada.</div>
               )}
+              {!pubLoading && publicationsDisplay.length < groupedPublications.length ? (
+                <button
+                  type="button"
+                  onClick={() => setPubVisibleCount((prev) => prev + 8)}
+                  className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition-all duration-200 hover:bg-slate-50"
+                >
+                  Carregar mais publicações ({groupedPublications.length - publicationsDisplay.length} restantes)
+                </button>
+              ) : null}
             </div>
           </section>
         ) : null}
       </div>
+      {showMobileActionBar ? (
+        <div className="fixed inset-x-2 bottom-2 z-[90] grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-[0_14px_36px_rgba(15,23,42,0.22)] backdrop-blur sm:hidden">
+          <Link
+            href="/portal"
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-xs font-black text-slate-700"
+          >
+            Voltar
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              if (tab === "substitutes") clearSubstituteForm();
+              if (tab === "materials") clearMaterialForm();
+              if (tab === "finance") clearFinanceForm();
+            }}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-xs font-black text-slate-700"
+          >
+            Limpar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (tab === "substitutes") void addSubstitute();
+              if (tab === "materials") void addMaterial();
+              if (tab === "finance") void addFinanceRecord();
+            }}
+            disabled={subsLoading || matLoading}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 px-2 text-xs font-black text-white disabled:opacity-60"
+          >
+            Salvar
+          </button>
+        </div>
+      ) : null}
+
       {activeGalleryPublication ? (
         <div
-          className="fixed inset-0 z-[9999] bg-slate-900/55 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[9999] bg-slate-900/55 p-2 backdrop-blur-sm sm:p-4"
           onClick={() => setPubGalleryBatchId(null)}
         >
           <div
-            className="mx-auto mt-6 max-h-[88vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_20px_60px_rgba(15,23,42,0.25)]"
+            className="mx-auto mt-2 max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.25)] sm:mt-6 sm:max-h-[88vh] sm:rounded-3xl sm:p-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
               <div>
                 <div className="text-lg font-black text-slate-900">Galeria do envio</div>
                 <div className="text-xs font-bold text-slate-500">
@@ -3738,7 +3890,7 @@ export default function ManagementTabs({
               <button
                 type="button"
                 onClick={() => setPubGalleryBatchId(null)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 sm:w-auto"
               >
                 Fechar
               </button>
