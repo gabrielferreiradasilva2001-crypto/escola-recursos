@@ -50,8 +50,10 @@ export async function GET(req: Request) {
   if (response || !user) return response;
 
   const scope = await getAdminScope(user.id ?? "");
+  const managementRole = String(user.user_metadata?.management_role ?? "").trim().toLowerCase();
+  const canManageMaterials = scope.isAdmin || managementRole === "estagiario";
   const viewerScope = await getViewerSchoolScope(user);
-  if (!scope.isAdmin) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
+  if (!canManageMaterials) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? "");
@@ -76,12 +78,12 @@ export async function GET(req: Request) {
     query = query.gte("delivered_at", start).lt("delivered_at", end);
   }
   if (period) {
-    if (!canAccessPeriod(scope, period)) {
+    if (scope.isAdmin && !canAccessPeriod(scope, period)) {
       return NextResponse.json({ error: "Sem acesso a este período." }, { status: 403 });
     }
     query = query.eq("period", period);
   }
-  if (scope.allowedPeriods.length) query = query.in("period", scope.allowedPeriods);
+  if (scope.isAdmin && scope.allowedPeriods.length) query = query.in("period", scope.allowedPeriods);
   if (schoolId) query = query.eq("school_id", schoolId);
   if (!schoolId && !viewerScope.isSuperAdmin && viewerScope.allowedSchoolIds.length) {
     query = query.in("school_id", viewerScope.allowedSchoolIds);
@@ -99,7 +101,7 @@ export async function GET(req: Request) {
   }
 
   const filtered = (data ?? []).filter((row: DeliveryRow) => {
-    if (!canAccessPeriod(scope, row.period)) return false;
+    if (scope.isAdmin && !canAccessPeriod(scope, row.period)) return false;
     if (viewerScope.isSuperAdmin) return true;
     if (!viewerScope.allowedSchoolIds.length) return false;
     return row.school_id ? viewerScope.allowedSchoolIds.includes(String(row.school_id)) : false;
@@ -113,7 +115,9 @@ export async function POST(req: Request) {
   if (response || !user) return response;
 
   const scope = await getAdminScope(user.id ?? "");
-  if (!scope.isAdmin) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
+  const managementRole = String(user.user_metadata?.management_role ?? "").trim().toLowerCase();
+  const canManageMaterials = scope.isAdmin || managementRole === "estagiario";
+  if (!canManageMaterials) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const items = Array.isArray(body?.items) ? body.items : null;
@@ -136,7 +140,7 @@ export async function POST(req: Request) {
   if (!hasSchoolAccess(viewerScope, school_id)) {
     return NextResponse.json({ error: "Sem acesso a esta escola." }, { status: 403 });
   }
-  if (!canAccessPeriod(scope, period)) {
+  if (scope.isAdmin && !canAccessPeriod(scope, period)) {
     return NextResponse.json({ error: "Sem acesso a este período." }, { status: 403 });
   }
 

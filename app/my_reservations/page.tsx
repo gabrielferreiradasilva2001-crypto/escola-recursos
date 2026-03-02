@@ -38,6 +38,13 @@ type PrintJob = {
   printed: boolean;
   url: string;
 };
+type SchoolOption = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+const LEGACY_LOCATIONS = ["Antonio Valadares - SED", "Antonio Valadares - Extensão"];
 
 export default function MyReservationsPage() {
   function normalizeUsername(input: string) {
@@ -69,7 +76,8 @@ export default function MyReservationsPage() {
   const [printEntries, setPrintEntries] = useState<
     { file: File | null; title: string; period: string }[]
   >([{ file: null, title: "", period: "matutino" }]);
-  const [printLocation, setPrintLocation] = useState("Antonio Valadares - SED");
+  const [printLocation, setPrintLocation] = useState("");
+  const [deliverySchools, setDeliverySchools] = useState<SchoolOption[]>([]);
   const [printMsg, setPrintMsg] = useState("");
   const [printLoading, setPrintLoading] = useState(false);
   const [showAllPrintJobs, setShowAllPrintJobs] = useState(false);
@@ -123,6 +131,7 @@ export default function MyReservationsPage() {
       setNeedsLogin(false);
       await load();
       await loadPrintJobs();
+      await loadDeliverySchools(data.session?.access_token ?? "");
     })();
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
@@ -144,6 +153,7 @@ export default function MyReservationsPage() {
         setNeedsLogin(false);
         void load();
         void loadPrintJobs();
+        void loadDeliverySchools(session.access_token);
       }
     );
     return () => {
@@ -256,12 +266,58 @@ export default function MyReservationsPage() {
     setPrintJobs(payload?.data ?? []);
   }
 
+  async function loadDeliverySchools(tokenFromCaller?: string) {
+    const { data: session } = await supabase.auth.getSession();
+    const token = tokenFromCaller || session.session?.access_token || "";
+    if (!token) {
+      setDeliverySchools([]);
+      return;
+    }
+    try {
+      const res = await fetch("/api/schools/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || "Erro ao carregar escolas.");
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      const normalized = rows
+        .map((row) => ({
+          id: String(row?.id ?? "").trim(),
+          name: String(row?.name ?? "").trim(),
+          active: Boolean(row?.active),
+        }))
+        .filter((row) => row.id && row.name && row.active !== false);
+      setDeliverySchools(normalized);
+    } catch {
+      setDeliverySchools([]);
+    }
+  }
+
+  const availableLocations = useMemo(
+    () => (deliverySchools.length ? deliverySchools.map((s) => s.name) : [...LEGACY_LOCATIONS]),
+    [deliverySchools]
+  );
+
+  const isExtensionLocation = useMemo(
+    () => printLocation.toLowerCase().includes("extens"),
+    [printLocation]
+  );
+
   useEffect(() => {
-    if (printLocation !== "Antonio Valadares - Extensão") return;
+    if (!availableLocations.length) return;
+    if (!printLocation || !availableLocations.includes(printLocation)) {
+      setPrintLocation(availableLocations[0]);
+    }
+  }, [availableLocations, printLocation]);
+
+  useEffect(() => {
+    if (!isExtensionLocation) return;
     setPrintEntries((prev) =>
       prev.map((entry) => ({ ...entry, period: "vespertino" }))
     );
-  }, [printLocation]);
+  }, [isExtensionLocation]);
 
   const resPerPage = 5;
   const sortedPrintJobs = useMemo(
@@ -390,6 +446,7 @@ export default function MyReservationsPage() {
     setNeedsLogin(false);
     void load();
     void loadPrintJobs();
+    void loadDeliverySchools(session?.access_token ?? "");
     window.setTimeout(() => {
       setLoginLoading(false);
       setLoginOpen(false);
@@ -489,8 +546,11 @@ export default function MyReservationsPage() {
                 onChange={(e) => setPrintLocation(e.target.value)}
                 className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
               >
-                <option value="Antonio Valadares - SED">Antonio Valadares - SED</option>
-                <option value="Antonio Valadares - Extensão">Antonio Valadares - Extensão</option>
+                {availableLocations.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
 
               <div className="mt-4 space-y-3">
@@ -532,9 +592,9 @@ export default function MyReservationsPage() {
                         )
                       }
                       className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold"
-                      disabled={printLocation === "Antonio Valadares - Extensão"}
+                      disabled={isExtensionLocation}
                     >
-                      {printLocation === "Antonio Valadares - Extensão" ? (
+                      {isExtensionLocation ? (
                         <option value="vespertino">Vespertino</option>
                       ) : (
                         <>
@@ -566,10 +626,7 @@ export default function MyReservationsPage() {
                       {
                         file: null,
                         title: "",
-                        period:
-                          printLocation === "Antonio Valadares - Extensão"
-                            ? "vespertino"
-                            : "matutino",
+                        period: isExtensionLocation ? "vespertino" : "matutino",
                       },
                     ])
                   }
@@ -610,7 +667,9 @@ export default function MyReservationsPage() {
                       const payload = await res.json().catch(() => ({}));
                       if (!res.ok) throw new Error(payload?.error ?? "Erro ao enviar.");
                     }
-                    setPrintEntries([{ file: null, title: "", period: "matutino" }]);
+                    setPrintEntries([
+                      { file: null, title: "", period: isExtensionLocation ? "vespertino" : "matutino" },
+                    ]);
                     await loadPrintJobs();
                     setPrintMsg("Arquivo(s) enviado(s) com sucesso para impressão.");
                     setToast({ type: "ok", text: "Arquivos enviados para impressão." });

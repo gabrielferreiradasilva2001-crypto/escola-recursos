@@ -1,0 +1,33 @@
+name: Supabase Backup
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL || vars.SUPABASE_DB_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Validate required envs
+        run: |
+          [ -n "${SUPABASE_DB_URL}" ] || (echo "Missing SUPABASE_DB_URL (repo secret or variable)." && exit 1)
+
+      - name: Generate backup
+        run: bash scripts/supabase-backup.sh
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_id }}
+          path: backups/*
+          retention-days: 30

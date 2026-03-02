@@ -846,19 +846,20 @@ export default function CalendarPage() {
     return ((teacher?.class_ids ?? []) as string[]).filter(Boolean);
   }, [teachers, teacherId]);
   const classOptions = useMemo(() => {
-    const source =
-      selectedTeacherClassIds.length > 0
+    const source = isAdmin
+      ? selectedTeacherClassIds.length > 0
         ? classes.filter((c) => selectedTeacherClassIds.includes(c.id))
-        : classes;
+        : classes
+      : classes.filter((c) => selectedTeacherClassIds.includes(c.id));
     return source
       .filter((c) => c.active)
       .map((c) => ({
         value: c.name,
         label: `${c.name} • ${c.period}`,
       }));
-  }, [classes, selectedTeacherClassIds]);
+  }, [classes, isAdmin, selectedTeacherClassIds]);
   const hasClassOptions = classOptions.length > 0;
-  const missingTeacherClassBinding = !!teacherId && selectedTeacherClassIds.length === 0;
+  const missingTeacherClassBinding = !isAdmin && (!teacherId || selectedTeacherClassIds.length === 0);
   const noClassOptionsMessage = missingTeacherClassBinding
     ? "Professor sem turmas vinculadas. Ajuste em Cadastros > Usuários."
     : "Não há turmas cadastradas para esta escola e ano.";
@@ -901,9 +902,13 @@ export default function CalendarPage() {
       }
 
       try {
+        const teacherHeaders: HeadersInit = { "Content-Type": "application/json" };
+        if (currentSession?.access_token) {
+          teacherHeaders.Authorization = `Bearer ${currentSession.access_token}`;
+        }
         const res = await fetch("/api/teachers/list", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: teacherHeaders,
           body: JSON.stringify({}),
         });
         const payload = await res.json().catch(() => ({}));

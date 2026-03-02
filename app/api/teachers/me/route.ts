@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../_supabaseAdmin";
+import { resolveTeacherSchoolIdsForUser } from "../../_schoolScope";
 
 export async function POST(req: Request) {
   try {
@@ -51,7 +52,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, data: data ?? null });
+    if (!user) {
+      return NextResponse.json({ ok: true, data: data ?? null });
+    }
+
+    const resolvedSchoolIds = await resolveTeacherSchoolIdsForUser(user);
+    if (!data) {
+      if (!resolvedSchoolIds.length) {
+        return NextResponse.json({ ok: true, data: null });
+      }
+      const fallbackName = String(user.user_metadata?.name ?? "").trim() || null;
+      const fallbackId = String(user.user_metadata?.teacher_id ?? "").trim() || null;
+      return NextResponse.json({
+        ok: true,
+        data: {
+          id: fallbackId ?? "",
+          name: fallbackName ?? "",
+          school_ids: resolvedSchoolIds,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        ...data,
+        school_ids: resolvedSchoolIds,
+      },
+    });
   } catch {
     return NextResponse.json({ error: "Falha ao processar a requisição." }, { status: 400 });
   }

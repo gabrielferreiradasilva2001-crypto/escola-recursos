@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import { resolvePortalRole } from "../../lib/portalRoles";
 import HomeTopButton from "../components/HomeTopButton";
 import SchoolLogo from "../components/SchoolLogo";
 import {
@@ -69,6 +70,7 @@ type MaterialRecipient = {
 };
 
 type TabKey = "materials" | "substitutes" | "prints" | "publications" | "finance";
+type ManagementRole = "professor" | "estagiario" | "diretor" | "secretaria" | "coordenador";
 type PrintJobRow = {
   id: string;
   created_at: string;
@@ -164,6 +166,7 @@ export default function ManagementTabs({
   const [month, setMonth] = useState(new Date().getMonth() + 1);
 
   const [isAdmin, setIsAdmin] = useState(false);
+  const [managementRole, setManagementRole] = useState<ManagementRole>("professor");
   const [authChecking, setAuthChecking] = useState(true);
   const [adminScope, setAdminScope] = useState<AdminScopeState>({
     allowedPeriods: [],
@@ -345,6 +348,15 @@ export default function ManagementTabs({
     () => schools.find((school) => school.id === reportSchoolId) ?? null,
     [schools, reportSchoolId]
   );
+  const isInternManagement = managementRole === "estagiario";
+  const canAccessManagement = isAdmin || isInternManagement;
+  const availableTabs = useMemo<TabKey[]>(
+    () =>
+      isInternManagement
+        ? ["materials"]
+        : ["materials", "prints", "substitutes", "publications", "finance"],
+    [isInternManagement]
+  );
   const reportSchoolName = reportSchool?.name || "Escola não informada";
 
   const areaOptions = useMemo(
@@ -461,12 +473,14 @@ export default function ManagementTabs({
       const { data } = await supabase.auth.getSession();
       if (!active) return;
       setAuthEmail(data.session?.user?.email ?? "");
+      setManagementRole(resolvePortalRole(data.session?.user ?? null));
       await refreshAdmin(data.session ?? null);
       if (!active) return;
       setAuthChecking(false);
     })();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthEmail(session?.user?.email ?? "");
+      setManagementRole(resolvePortalRole(session?.user ?? null));
       void (async () => {
         await refreshAdmin(session ?? null);
         setAuthChecking(false);
@@ -883,27 +897,27 @@ export default function ManagementTabs({
   }
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessManagement || isInternManagement) return;
     loadSubstitutes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [canAccessManagement, isInternManagement]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessManagement) return;
     loadMaterials();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, year, month, matPeriod, reportSchoolId]);
+  }, [canAccessManagement, year, month, matPeriod, reportSchoolId]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessManagement || isInternManagement) return;
     loadPrintJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, printLocationFilter, printStatusFilter, printPeriodFilter]);
+  }, [canAccessManagement, isInternManagement, printLocationFilter, printStatusFilter, printPeriodFilter]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessManagement) return;
     loadSchools();
-  }, [isAdmin]);
+  }, [canAccessManagement]);
 
   useEffect(() => {
     if (!schools.length) return;
@@ -913,7 +927,7 @@ export default function ManagementTabs({
   }, [schools, reportSchoolId]);
 
   useEffect(() => {
-    if (!isAdmin || !reportSchoolId) {
+    if (!canAccessManagement || !reportSchoolId) {
       setClassOptions([]);
       setStudents([]);
       setTeachers([]);
@@ -923,7 +937,7 @@ export default function ManagementTabs({
     void loadStudents(reportSchoolId);
     void loadTeachers(reportSchoolId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, reportSchoolId, year]);
+  }, [canAccessManagement, reportSchoolId, year]);
 
   useEffect(() => {
     if (!reportSchool?.name) return;
@@ -955,13 +969,13 @@ export default function ManagementTabs({
   }, [matRecipientType]);
 
   useEffect(() => {
-    if (!isAdmin || tab !== "publications") return;
+    if (!canAccessManagement || isInternManagement || tab !== "publications") return;
     loadPublications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, tab, pubStatusFilter]);
+  }, [canAccessManagement, isInternManagement, tab, pubStatusFilter]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessManagement) return;
 
     const nextPeriod = adminScope.defaultPeriod || adminScope.allowedPeriods[0] || "matutino";
     if (adminScope.allowedPeriods.length && !adminScope.allowedPeriods.includes(matPeriod)) {
@@ -986,7 +1000,7 @@ export default function ManagementTabs({
       setPrintLocationFilter(nextLocation);
     }
   }, [
-    isAdmin,
+    canAccessManagement,
     adminScope.allowedPeriods,
     adminScope.allowedLocations,
     adminScope.defaultPeriod,
@@ -1000,6 +1014,11 @@ export default function ManagementTabs({
   useEffect(() => {
     setPrintPeriodFilter(matPeriod);
   }, [matPeriod]);
+
+  useEffect(() => {
+    if (availableTabs.includes(tab)) return;
+    setTab("materials");
+  }, [availableTabs, tab]);
 
   const filteredPrintJobs = useMemo(() => {
     const q = printSearch.trim().toLowerCase();
@@ -1834,7 +1853,7 @@ export default function ManagementTabs({
     );
   }
 
-  if (!isAdmin) {
+  if (!canAccessManagement) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-emerald-50 via-sky-50 to-white text-slate-900">
         <HomeTopButton />
@@ -1843,7 +1862,7 @@ export default function ManagementTabs({
             <div className="text-xs font-extrabold text-slate-500">Acesso restrito</div>
             <div className="text-2xl font-black">Gestão</div>
             <p className="mt-2 text-sm font-bold text-slate-600">
-              Apenas admins podem acessar esta área.
+              Apenas perfis autorizados podem acessar esta área.
             </p>
             <button
               type="button"
@@ -1917,7 +1936,8 @@ export default function ManagementTabs({
     );
   }
 
-  const showMobileActionBar = tab === "substitutes" || tab === "materials" || tab === "finance";
+  const showMobileActionBar =
+    tab === "materials" || (!isInternManagement && (tab === "substitutes" || tab === "finance"));
 
   return (
     <main className={`management-page min-h-screen text-slate-900 relative ${showMobileActionBar ? "pb-28 sm:pb-0" : ""}`}>
@@ -2171,6 +2191,8 @@ export default function ManagementTabs({
           >
             Materiais
           </button>
+          {!isInternManagement ? (
+            <>
           <button
             type="button"
             onClick={() => setTab("prints")}
@@ -2215,8 +2237,11 @@ export default function ManagementTabs({
           >
             Financeiro
           </button>
+            </>
+          ) : null}
         </div>
 
+        {!isInternManagement ? (
         <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -2335,6 +2360,7 @@ export default function ManagementTabs({
             </div>
           ) : null}
         </section>
+        ) : null}
 
         {tab === "substitutes" ? (
           <section className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.10)] sm:p-5">
@@ -2901,14 +2927,16 @@ export default function ManagementTabs({
                         {new Date(m.delivered_at).toLocaleDateString("pt-BR")}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => deleteMaterial(m.id)}
-                      className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 p-2 text-red-700"
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {!isInternManagement ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteMaterial(m.id)}
+                        className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 p-2 text-red-700"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : null}
                   </div>
                 ))
               ) : (
