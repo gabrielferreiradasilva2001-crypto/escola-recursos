@@ -31,6 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       E2E_TEACHER_USER: ${{ secrets.E2E_TEACHER_USER }}
       E2E_TEACHER_PASSWORD: ${{ secrets.E2E_TEACHER_PASSWORD }}
       E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
@@ -61,4 +64,3 @@ jobs:
           name: playwright-report
           path: playwright-report
           if-no-files-found: ignore
-
