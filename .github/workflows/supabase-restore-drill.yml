@@ -1,0 +1,62 @@
+name: Supabase Restore Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_phrase:
+        description: 'Type RESTORE_STAGING to continue'
+        required: true
+        type: string
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL || vars.SUPABASE_DB_URL }}
+      STAGING_SUPABASE_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL || vars.STAGING_SUPABASE_DB_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Guardrail confirmation
+        run: |
+          [ "${{ inputs.confirm_phrase }}" = "RESTORE_STAGING" ] || (echo "Invalid confirmation phrase." && exit 1)
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Validate required envs
+        run: |
+          [ -n "${SUPABASE_DB_URL}" ] || (echo "Missing SUPABASE_DB_URL (repo secret or variable)." && exit 1)
+          [ -n "${STAGING_SUPABASE_DB_URL}" ] || (echo "Missing STAGING_SUPABASE_DB_URL (repo secret or variable)." && exit 1)
+
+      - name: Backup production snapshot
+        run: |
+          mkdir -p backups
+          TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          DUMP_FILE="backups/restore-drill-${TIMESTAMP}.dump"
+          pg_dump --format=custom --no-owner --no-privileges --dbname="${SUPABASE_DB_URL}" --file="${DUMP_FILE}"
+          echo "DUMP_FILE=${DUMP_FILE}" >> "$GITHUB_ENV"
+
+      - name: Restore snapshot to staging
+        run: |
+          pg_restore \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-privileges \
+            --dbname="${STAGING_SUPABASE_DB_URL}" \
+            "${DUMP_FILE}"
+
+      - name: Restore smoke query
+        run: |
+          psql "${STAGING_SUPABASE_DB_URL}" -v ON_ERROR_STOP=1 -c "select now() as restored_at;"
+          psql "${STAGING_SUPABASE_DB_URL}" -v ON_ERROR_STOP=1 -c "select count(*) as table_count from information_schema.tables where table_schema = 'public';"
+
+      - name: Upload drill snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-drill-${{ github.run_id }}
+          path: backups/*
+          retention-days: 7

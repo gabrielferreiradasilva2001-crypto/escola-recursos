@@ -38,6 +38,19 @@
 - Se `SENTRY_DSN` estiver ativo, eventos chegando no painel Sentry.
 - Time confirma acesso aos logs da Vercel.
 
+## 5) Backup e recuperação
+
+- Segredos configurados no GitHub Actions:
+  - `SUPABASE_DB_URL`
+  - `STAGING_SUPABASE_DB_URL`
+- Backup diário ativo:
+  - Workflow `.github/workflows/supabase-backup.yml`
+- Restore drill executado ao menos 1x em staging:
+  - Workflow `.github/workflows/supabase-restore-drill.yml`
+  - Confirmar sucesso do smoke query após restore
+- Runbook validado pelo time:
+  - `RUNBOOK_BACKUP_RESTORE.md`
+
 ## 6) Governança de merge
 
 - Branch protection ativa na `main`.
@@ -45,7 +58,7 @@
   - `lint`
   - `e2e-mobile`
 
-## 5) Rollback
+## 7) Rollback
 
 - Tag de rollback criada e publicada:
   - `v1-mobile-hardening`
