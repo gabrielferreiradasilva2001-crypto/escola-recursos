@@ -341,7 +341,12 @@ export default function PortalPage() {
   ];
   const shortcuts =
     userRole === "estagiario"
-      ? allShortcuts.filter((shortcut) => shortcut.label === "Agendamentos" || shortcut.label === "Calendário Escolar")
+      ? allShortcuts.filter(
+          (shortcut) =>
+            shortcut.label === "Agendamentos" ||
+            shortcut.label === "Calendário Escolar" ||
+            shortcut.label === "Gestão"
+        )
       : allShortcuts;
 
   const hasUser = email.trim().length > 0;
