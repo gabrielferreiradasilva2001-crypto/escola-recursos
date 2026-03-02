@@ -16,14 +16,18 @@ async function loginFromPortal(page: Page, username: string, password: string) {
     await loginDialog.getByRole("button", { name: "Entrar" }).click();
   }
 
-  await expect(
-    page
-      .locator("text=Bem-vindo(a),")
-      .first()
-      .or(page.locator("text=Boa noite,").first())
-      .or(page.locator("text=Boa tarde,").first())
-      .or(page.locator("text=Bom dia,").first())
-  ).toBeVisible();
+  // If account is flagged for first login, fail fast with a clear message.
+  if (page.url().includes("/auth/first-login")) {
+    throw new Error(
+      "E2E user redirected to /auth/first-login. Use a test user with active password."
+    );
+  }
+
+  await expect(page.getByRole("button", { name: "Sair" }).first()).toBeVisible({
+    timeout: 30000,
+  });
+
+  await expect(loginDialog).toBeHidden({ timeout: 30000 });
 }
 
 test.describe("Mobile critical smoke", () => {
