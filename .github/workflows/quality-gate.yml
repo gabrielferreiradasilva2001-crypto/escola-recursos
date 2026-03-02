@@ -31,13 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      E2E_TEACHER_USER: ${{ secrets.E2E_TEACHER_USER }}
-      E2E_TEACHER_PASSWORD: ${{ secrets.E2E_TEACHER_PASSWORD }}
-      E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
-      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || vars.SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_TEACHER_USER: ${{ secrets.E2E_TEACHER_USER || vars.E2E_TEACHER_USER }}
+      E2E_TEACHER_PASSWORD: ${{ secrets.E2E_TEACHER_PASSWORD || vars.E2E_TEACHER_PASSWORD }}
+      E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER || vars.E2E_ADMIN_USER }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD || vars.E2E_ADMIN_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +50,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate required envs
+        run: |
+          [ -n "${NEXT_PUBLIC_SUPABASE_URL}" ] || (echo "Missing NEXT_PUBLIC_SUPABASE_URL" && exit 1)
+          [ -n "${NEXT_PUBLIC_SUPABASE_ANON_KEY}" ] || (echo "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY" && exit 1)
+          [ -n "${E2E_TEACHER_USER}" ] || (echo "Missing E2E_TEACHER_USER" && exit 1)
+          [ -n "${E2E_TEACHER_PASSWORD}" ] || (echo "Missing E2E_TEACHER_PASSWORD" && exit 1)
+          [ -n "${E2E_ADMIN_USER}" ] || (echo "Missing E2E_ADMIN_USER" && exit 1)
+          [ -n "${E2E_ADMIN_PASSWORD}" ] || (echo "Missing E2E_ADMIN_PASSWORD" && exit 1)
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
