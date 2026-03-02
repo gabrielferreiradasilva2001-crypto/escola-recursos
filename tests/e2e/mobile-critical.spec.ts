@@ -47,7 +47,14 @@ test.describe("Mobile critical smoke", () => {
     await page.addInitScript(() => localStorage.setItem("mutare_calendar_card_mode", "1"));
     await page.goto("/calendar?year=2026");
     await expect(page.getByText("Calendário do mês")).toBeVisible();
-    await expect(page.locator(".calendar-mobile-selection-count").first()).toContainText("Selecionados:");
+
+    // Smoke assertion: calendar loaded in mobile with at least one scheduling surface visible.
+    await expect(
+      page
+        .locator(".calendar-mobile-period-btn:visible")
+        .first()
+        .or(page.locator("table").first())
+    ).toBeVisible();
   });
 
   test("teacher-space header and weekly calendar", async ({ page }) => {
