@@ -19,14 +19,52 @@ function normalizeIds(input: unknown) {
   );
 }
 
+async function loadSchoolIdsFromClassAssignments(teacherId: string) {
+  const safeTeacherId = String(teacherId ?? "").trim();
+  if (!safeTeacherId) return [];
+
+  const { data: links, error: linksErr } = await supabaseAdmin
+    .from("teacher_class_assignments")
+    .select("class_id")
+    .eq("teacher_id", safeTeacherId);
+  if (linksErr || !links?.length) return [];
+
+  const classIds = Array.from(
+    new Set(
+      links
+        .map((row) => String((row as { class_id?: unknown }).class_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (!classIds.length) return [];
+
+  const { data: classes, error: classesErr } = await supabaseAdmin
+    .from("classes")
+    .select("id,school_id")
+    .in("id", classIds);
+  if (classesErr || !classes?.length) return [];
+
+  return Array.from(
+    new Set(
+      classes
+        .map((row) => String((row as { school_id?: unknown }).school_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 async function loadTeacherSchoolIdsByTeacherId(teacherId: string) {
+  const safeTeacherId = String(teacherId ?? "").trim();
+  if (!safeTeacherId) return [];
+
   const { data, error } = await supabaseAdmin
     .from("teachers")
-    .select("school_ids")
-    .eq("id", teacherId)
+    .select("id,school_ids")
+    .eq("id", safeTeacherId)
     .maybeSingle();
-  if (error || !data) return [];
-  return normalizeIds((data as { school_ids?: unknown }).school_ids);
+  const fromTeacher = error || !data ? [] : normalizeIds((data as { school_ids?: unknown }).school_ids);
+  const fromAssignments = await loadSchoolIdsFromClassAssignments(safeTeacherId);
+  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
 }
 
 async function loadTeacherSchoolIdsByEmail(userEmail: string) {
@@ -40,13 +78,52 @@ async function loadTeacherSchoolIdsByEmail(userEmail: string) {
 
   const { data, error } = await supabaseAdmin
     .from("teachers")
-    .select("school_ids")
+    .select("id,school_ids")
     .in("email", candidates)
     .limit(1)
     .maybeSingle();
 
   if (error || !data) return [];
-  return normalizeIds((data as { school_ids?: unknown }).school_ids);
+  const teacherId = String((data as { id?: unknown }).id ?? "").trim();
+  const fromTeacher = normalizeIds((data as { school_ids?: unknown }).school_ids);
+  const fromAssignments = await loadSchoolIdsFromClassAssignments(teacherId);
+  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+}
+
+async function loadTeacherSchoolIdsByUsername(username: string) {
+  const normalized = String(username ?? "").trim().toLowerCase();
+  if (!normalized) return [];
+  const candidates = Array.from(new Set([normalized, `${normalized}@local.eeav`]));
+  const { data, error } = await supabaseAdmin
+    .from("teachers")
+    .select("id,school_ids")
+    .in("email", candidates)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return [];
+  const teacherId = String((data as { id?: unknown }).id ?? "").trim();
+  const fromTeacher = normalizeIds((data as { school_ids?: unknown }).school_ids);
+  const fromAssignments = await loadSchoolIdsFromClassAssignments(teacherId);
+  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+}
+
+export async function resolveTeacherSchoolIdsForUser(user: User): Promise<string[]> {
+  const metadataTeacherId = String(user.user_metadata?.teacher_id ?? "").trim();
+  if (metadataTeacherId) {
+    const ids = await loadTeacherSchoolIdsByTeacherId(metadataTeacherId);
+    if (ids.length) return ids;
+  }
+
+  const byEmail = await loadTeacherSchoolIdsByEmail(String(user.email ?? ""));
+  if (byEmail.length) return byEmail;
+
+  const metadataUsername = String(user.user_metadata?.username ?? "").trim().toLowerCase();
+  if (metadataUsername) {
+    const byUsername = await loadTeacherSchoolIdsByUsername(metadataUsername);
+    if (byUsername.length) return byUsername;
+  }
+
+  return [];
 }
 
 export async function getViewerSchoolScope(user: User): Promise<ViewerSchoolScope> {
@@ -55,16 +132,8 @@ export async function getViewerSchoolScope(user: User): Promise<ViewerSchoolScop
     return { isAdmin: scope.isAdmin, isSuperAdmin: true, allowedSchoolIds: [] };
   }
 
-  const metadataTeacherId = String(user.user_metadata?.teacher_id ?? "").trim();
-  const byTeacherId = metadataTeacherId
-    ? await loadTeacherSchoolIdsByTeacherId(metadataTeacherId)
-    : [];
-  if (byTeacherId.length) {
-    return { isAdmin: scope.isAdmin, isSuperAdmin: false, allowedSchoolIds: byTeacherId };
-  }
-
-  const byEmail = await loadTeacherSchoolIdsByEmail(String(user.email ?? ""));
-  return { isAdmin: scope.isAdmin, isSuperAdmin: false, allowedSchoolIds: byEmail };
+  const teacherSchoolIds = await resolveTeacherSchoolIdsForUser(user);
+  return { isAdmin: scope.isAdmin, isSuperAdmin: false, allowedSchoolIds: teacherSchoolIds };
 }
 
 export function hasSchoolAccess(scope: ViewerSchoolScope, schoolId: string) {
@@ -75,4 +144,3 @@ export function hasSchoolAccess(scope: ViewerSchoolScope, schoolId: string) {
 export function normalizeSchoolIds(values: unknown) {
   return normalizeIds(values);
 }
-
