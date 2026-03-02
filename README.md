@@ -58,7 +58,7 @@ Before using it in production, run this SQL in Supabase:
 - Execucao local:
   - `npm run test:e2e:mobile`
 - CI:
-  - `.github/workflows/e2e-mobile.yml`
+  - `.github/workflows/quality-gate.yml`
 
 ## Monitoramento
 
@@ -83,3 +83,12 @@ Before using it in production, run this SQL in Supabase:
   - Checks obrigatórios:
     - `lint`
     - `e2e-mobile`
+
+## Backup e Recuperacao
+
+- Backup diario do banco:
+  - `.github/workflows/supabase-backup.yml`
+- Teste de restore em staging (manual):
+  - `.github/workflows/supabase-restore-drill.yml`
+- Runbook operacional:
+  - `RUNBOOK_BACKUP_RESTORE.md`
