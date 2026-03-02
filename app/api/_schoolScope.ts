@@ -19,6 +19,12 @@ function normalizeIds(input: unknown) {
   );
 }
 
+function normalizeIdentity(value: unknown) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  return raw.endsWith("@local.eeav") ? raw.replace("@local.eeav", "") : raw;
+}
+
 async function loadSchoolIdsFromClassAssignments(teacherId: string) {
   const safeTeacherId = String(teacherId ?? "").trim();
   if (!safeTeacherId) return [];
@@ -53,6 +59,34 @@ async function loadSchoolIdsFromClassAssignments(teacherId: string) {
   );
 }
 
+async function loadTeacherSchoolIdsByTeacherRecord(record: { id?: unknown; school_ids?: unknown }) {
+  const teacherId = String(record.id ?? "").trim();
+  const fromTeacher = normalizeIds(record.school_ids);
+  const fromAssignments = teacherId ? await loadSchoolIdsFromClassAssignments(teacherId) : [];
+  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+}
+
+async function loadTeacherSchoolIdsByIdentityCandidates(candidates: string[]) {
+  const normalizedCandidates = Array.from(new Set(candidates.map(normalizeIdentity).filter(Boolean)));
+  if (!normalizedCandidates.length) return [];
+
+  const { data: teachers, error } = await supabaseAdmin
+    .from("teachers")
+    .select("id,email,school_ids")
+    .limit(3000);
+  if (error || !teachers?.length) return [];
+
+  const matched = (teachers as Array<{ id?: unknown; email?: unknown; school_ids?: unknown }>).find((row) => {
+    const emailRaw = String(row.email ?? "").trim().toLowerCase();
+    const emailAsIdentity = normalizeIdentity(emailRaw);
+    const emailLocal = emailRaw ? normalizeIdentity(`${emailAsIdentity}@local.eeav`) : "";
+    return normalizedCandidates.some((c) => c === emailAsIdentity || c === emailLocal);
+  });
+  if (!matched) return [];
+
+  return loadTeacherSchoolIdsByTeacherRecord(matched);
+}
+
 async function loadTeacherSchoolIdsByTeacherId(teacherId: string) {
   const safeTeacherId = String(teacherId ?? "").trim();
   if (!safeTeacherId) return [];
@@ -62,9 +96,8 @@ async function loadTeacherSchoolIdsByTeacherId(teacherId: string) {
     .select("id,school_ids")
     .eq("id", safeTeacherId)
     .maybeSingle();
-  const fromTeacher = error || !data ? [] : normalizeIds((data as { school_ids?: unknown }).school_ids);
-  const fromAssignments = await loadSchoolIdsFromClassAssignments(safeTeacherId);
-  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+  if (error || !data) return [];
+  return loadTeacherSchoolIdsByTeacherRecord(data as { id?: unknown; school_ids?: unknown });
 }
 
 async function loadTeacherSchoolIdsByEmail(userEmail: string) {
@@ -83,28 +116,32 @@ async function loadTeacherSchoolIdsByEmail(userEmail: string) {
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) return [];
-  const teacherId = String((data as { id?: unknown }).id ?? "").trim();
-  const fromTeacher = normalizeIds((data as { school_ids?: unknown }).school_ids);
-  const fromAssignments = await loadSchoolIdsFromClassAssignments(teacherId);
-  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+  if (!error && data) {
+    return loadTeacherSchoolIdsByTeacherRecord(data as { id?: unknown; school_ids?: unknown });
+  }
+
+  return loadTeacherSchoolIdsByIdentityCandidates([normalizedEmail, localUsername]);
 }
 
 async function loadTeacherSchoolIdsByUsername(username: string) {
-  const normalized = String(username ?? "").trim().toLowerCase();
+  const normalized = normalizeIdentity(username);
   if (!normalized) return [];
   const candidates = Array.from(new Set([normalized, `${normalized}@local.eeav`]));
+  return loadTeacherSchoolIdsByIdentityCandidates(candidates);
+}
+
+async function loadTeacherSchoolIdsByName(displayName: string) {
+  const safeName = String(displayName ?? "").trim();
+  if (!safeName) return [];
+
   const { data, error } = await supabaseAdmin
     .from("teachers")
-    .select("id,school_ids")
-    .in("email", candidates)
+    .select("id,name,school_ids")
+    .ilike("name", safeName)
     .limit(1)
     .maybeSingle();
   if (error || !data) return [];
-  const teacherId = String((data as { id?: unknown }).id ?? "").trim();
-  const fromTeacher = normalizeIds((data as { school_ids?: unknown }).school_ids);
-  const fromAssignments = await loadSchoolIdsFromClassAssignments(teacherId);
-  return Array.from(new Set([...fromTeacher, ...fromAssignments]));
+  return loadTeacherSchoolIdsByTeacherRecord(data as { id?: unknown; school_ids?: unknown });
 }
 
 export async function resolveTeacherSchoolIdsForUser(user: User): Promise<string[]> {
@@ -121,6 +158,12 @@ export async function resolveTeacherSchoolIdsForUser(user: User): Promise<string
   if (metadataUsername) {
     const byUsername = await loadTeacherSchoolIdsByUsername(metadataUsername);
     if (byUsername.length) return byUsername;
+  }
+
+  const metadataName = String(user.user_metadata?.name ?? "").trim();
+  if (metadataName) {
+    const byName = await loadTeacherSchoolIdsByName(metadataName);
+    if (byName.length) return byName;
   }
 
   return [];
