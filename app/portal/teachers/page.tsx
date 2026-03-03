@@ -227,7 +227,8 @@ export default function TeachersPage() {
     if (!schoolIds.length) return [];
     const matchShift = (period: string, shift: TeacherShift) => {
       if (shift === "ambos") return true;
-      return String(period).toLowerCase().startsWith(shift);
+      const normalized = String(period).toLowerCase();
+      return shift === "matutino" ? normalized.includes("matut") : normalized.includes("vesp");
     };
     return bindingClasses
       .filter(
@@ -243,7 +244,8 @@ export default function TeachersPage() {
     if (!editSchoolIds.length) return [];
     const matchShift = (period: string, shift: TeacherShift) => {
       if (shift === "ambos") return true;
-      return String(period).toLowerCase().startsWith(shift);
+      const normalized = String(period).toLowerCase();
+      return shift === "matutino" ? normalized.includes("matut") : normalized.includes("vesp");
     };
     return bindingClasses
       .filter(

@@ -879,6 +879,10 @@ export default function CalendarPage() {
     const ordered = (["matutino", "vespertino"] as ShiftType[]).filter((s) => set.has(s));
     return ordered.length ? ordered : ["matutino"];
   }, [classOptions]);
+  useEffect(() => {
+    if (availableShifts.includes(calendarViewShift)) return;
+    setCalendarViewShift(availableShifts[0] ?? "matutino");
+  }, [availableShifts, calendarViewShift]);
   const visibleClassOptions = useMemo(() => {
     return classOptions.filter((c) => c.period === bookingShift);
   }, [classOptions, bookingShift]);
