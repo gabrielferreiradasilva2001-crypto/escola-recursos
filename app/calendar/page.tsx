@@ -879,10 +879,6 @@ export default function CalendarPage() {
     const ordered = (["matutino", "vespertino"] as ShiftType[]).filter((s) => set.has(s));
     return ordered.length ? ordered : ["matutino"];
   }, [classOptions]);
-  useEffect(() => {
-    if (availableShifts.includes(calendarViewShift)) return;
-    setCalendarViewShift(availableShifts[0] ?? "matutino");
-  }, [availableShifts, calendarViewShift]);
   const visibleClassOptions = useMemo(() => {
     return classOptions.filter((c) => c.period === bookingShift);
   }, [classOptions, bookingShift]);
@@ -3513,18 +3509,31 @@ export default function CalendarPage() {
             Mostrando {datesToRender.length} de {sortedDates.length} datas
           </span>
         </div>
-          <div className="calendar-month-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ display: "inline-flex", border: "1px solid rgba(14,165,233,.35)", borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,.85)" }}>
+          <div className="calendar-month-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              border: "1px solid rgba(14,165,233,.35)",
+              borderRadius: 999,
+              overflow: "hidden",
+              background: "rgba(255,255,255,.92)",
+              boxShadow: "0 8px 22px rgba(14,165,233,0.12)",
+            }}
+          >
             <button
               type="button"
               onClick={() => setCalendarViewShift("matutino")}
               className="ux-btn"
+              aria-pressed={calendarViewShift === "matutino"}
+              title="Visualizar calendário do turno matutino"
               style={{
-                height: 36,
-                padding: "0 14px",
+                minHeight: 44,
+                minWidth: 108,
+                padding: "0 16px",
                 borderRadius: 0,
                 background: calendarViewShift === "matutino" ? "linear-gradient(135deg,#22c55e,#0ea5e9)" : "transparent",
                 color: calendarViewShift === "matutino" ? "#fff" : "#0f172a",
+                fontWeight: 1000,
               }}
             >
               Manhã
@@ -3533,12 +3542,16 @@ export default function CalendarPage() {
               type="button"
               onClick={() => setCalendarViewShift("vespertino")}
               className="ux-btn"
+              aria-pressed={calendarViewShift === "vespertino"}
+              title="Visualizar calendário do turno vespertino"
               style={{
-                height: 36,
-                padding: "0 14px",
+                minHeight: 44,
+                minWidth: 108,
+                padding: "0 16px",
                 borderRadius: 0,
                 background: calendarViewShift === "vespertino" ? "linear-gradient(135deg,#22c55e,#0ea5e9)" : "transparent",
                 color: calendarViewShift === "vespertino" ? "#fff" : "#0f172a",
+                fontWeight: 1000,
               }}
             >
               Tarde
