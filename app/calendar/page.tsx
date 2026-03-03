@@ -880,7 +880,8 @@ export default function CalendarPage() {
     return ordered.length ? ordered : ["matutino"];
   }, [classOptions]);
   const visibleClassOptions = useMemo(() => {
-    return classOptions.filter((c) => c.period === bookingShift);
+    const filtered = classOptions.filter((c) => c.period === bookingShift);
+    return filtered.length ? filtered : classOptions;
   }, [classOptions, bookingShift]);
   useEffect(() => {
     if (availableShifts.includes(bookingShift)) return;
@@ -901,14 +902,13 @@ export default function CalendarPage() {
     }
   }, [visibleClassOptions, defaultSchoolClass]);
   const hasClassOptions = classOptions.length > 0;
-  const hasShiftClassOptions = visibleClassOptions.length > 0;
   const missingTeacherSelection = isAdmin && !teacherId;
   const missingTeacherClassBinding = !missingTeacherSelection && (!teacherId || selectedTeacherClassIds.length === 0);
   const noClassOptionsMessage = missingTeacherClassBinding
     ? "Professor sem turmas vinculadas no turno. Ajuste em Cadastros > Usuários."
     : missingTeacherSelection
     ? "Selecione o professor para carregar as turmas e horários disponíveis."
-    : `Não há turmas cadastradas para o turno ${bookingShift} nesta escola e ano.`;
+    : "Não há turmas cadastradas para esta escola e ano.";
   const schoolLocked = schools.length === 1;
   const selectedCellSet = useMemo(() => new Set(selectedCellKeys), [selectedCellKeys]);
   const isDaySelected = useCallback(
@@ -1472,7 +1472,7 @@ export default function CalendarPage() {
 
   function validateForm() {
     if (!selectedSchoolId) return "Selecione a escola.";
-    if (!hasShiftClassOptions) return `Cadastre turmas para o turno ${bookingShift} antes de agendar.`;
+    if (!hasClassOptions) return "Cadastre turmas para esta escola antes de agendar.";
     if (!selectedDates.length && !formDate) return "Selecione pelo menos 1 data.";
     if (!teacherId) {
       return isAdmin
