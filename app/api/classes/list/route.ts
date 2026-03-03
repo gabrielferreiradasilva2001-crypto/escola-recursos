@@ -26,30 +26,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, data: [] });
     }
 
-    let query = supabaseAdmin
-      .from("classes")
-      .select("id,name,school_id,period,active,created_at,schools(name)")
-      .order("name");
+    const runQuery = async (applyYearFilter: boolean) => {
+      let query = supabaseAdmin
+        .from("classes")
+        .select("id,name,school_id,period,active,created_at,schools(name)")
+        .order("name");
 
-    if (schoolId) query = query.eq("school_id", schoolId);
-    if (!schoolId && !viewerScope.isSuperAdmin) {
-      query = query.in("school_id", viewerScope.allowedSchoolIds);
-    }
-    if (adminScope.isAdmin && !adminScope.isSuperAdmin && adminScope.allowedPeriods.length) {
-      query = query.in("period", adminScope.allowedPeriods);
-    }
-    if (period) query = query.eq("period", period);
+      if (schoolId) query = query.eq("school_id", schoolId);
+      if (!schoolId && !viewerScope.isSuperAdmin) {
+        query = query.in("school_id", viewerScope.allowedSchoolIds);
+      }
+      if (adminScope.isAdmin && !adminScope.isSuperAdmin && adminScope.allowedPeriods.length) {
+        query = query.in("period", adminScope.allowedPeriods);
+      }
+      if (period) query = query.eq("period", period);
 
-    if (year) {
-      const start = new Date(year, 0, 1).toISOString();
-      const end = new Date(year + 1, 0, 1).toISOString();
-      query = query.gte("created_at", start).lt("created_at", end);
+      if (applyYearFilter && year) {
+        const start = new Date(year, 0, 1).toISOString();
+        const end = new Date(year + 1, 0, 1).toISOString();
+        query = query.gte("created_at", start).lt("created_at", end);
+      }
+
+      return query;
+    };
+
+    const { data, error } = await runQuery(true);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Fallback: se o filtro de ano não retornar turmas, usa turmas ativas da escola/escopo.
+    if (year && (!data || !data.length)) {
+      const fallback = await runQuery(false);
+      if (fallback.error) return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, data: fallback.data ?? [] });
     }
 
-    const { data, error } = await query;
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
     return NextResponse.json({ ok: true, data: data ?? [] });
   } catch {
     return NextResponse.json({ error: "Falha ao processar a requisição." }, { status: 400 });
