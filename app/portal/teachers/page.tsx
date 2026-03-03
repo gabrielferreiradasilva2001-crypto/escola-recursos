@@ -67,6 +67,7 @@ const PERIOD_OPTIONS = ["matutino", "vespertino", "noturno"] as const;
 
 export default function TeachersPage() {
   type UserRole = "professor" | "estagiario" | "diretor" | "secretaria" | "coordenador";
+  type TeacherShift = "matutino" | "vespertino";
   function errorMessage(err: unknown, fallback: string) {
     return err instanceof Error ? err.message : fallback;
   }
@@ -98,6 +99,7 @@ export default function TeachersPage() {
   const [schoolIds, setSchoolIds] = useState<string[]>([]);
   const [createClassIds, setCreateClassIds] = useState<string[]>([]);
   const [createClassPicker, setCreateClassPicker] = useState("");
+  const [createTeacherShift, setCreateTeacherShift] = useState<TeacherShift>("matutino");
   const [createAsAdmin, setCreateAsAdmin] = useState(false);
   const [createAdminPeriods, setCreateAdminPeriods] = useState<string[]>(["matutino"]);
   const [createAdminLocations, setCreateAdminLocations] = useState<string[]>([]);
@@ -175,6 +177,7 @@ export default function TeachersPage() {
   const [editSchoolIds, setEditSchoolIds] = useState<string[]>([]);
   const [editClassIds, setEditClassIds] = useState<string[]>([]);
   const [editClassPicker, setEditClassPicker] = useState("");
+  const [editTeacherShift, setEditTeacherShift] = useState<TeacherShift>("matutino");
   const [editRole, setEditRole] = useState<UserRole>("professor");
   const [editIsAdmin, setEditIsAdmin] = useState(false);
   const [editWasAdmin, setEditWasAdmin] = useState(false);
@@ -223,9 +226,11 @@ export default function TeachersPage() {
   const createClassOptions = useMemo(() => {
     if (!schoolIds.length) return [];
     return bindingClasses
-      .filter((c) => c.active && schoolIds.includes(c.school_id))
+      .filter(
+        (c) => c.active && schoolIds.includes(c.school_id) && String(c.period).toLowerCase().startsWith(createTeacherShift)
+      )
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [bindingClasses, schoolIds]);
+  }, [bindingClasses, schoolIds, createTeacherShift]);
   const createAvailableClassOptions = useMemo(
     () => createClassOptions.filter((c) => !createClassIds.includes(c.id)),
     [createClassIds, createClassOptions]
@@ -233,9 +238,11 @@ export default function TeachersPage() {
   const editClassOptions = useMemo(() => {
     if (!editSchoolIds.length) return [];
     return bindingClasses
-      .filter((c) => c.active && editSchoolIds.includes(c.school_id))
+      .filter(
+        (c) => c.active && editSchoolIds.includes(c.school_id) && String(c.period).toLowerCase().startsWith(editTeacherShift)
+      )
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [bindingClasses, editSchoolIds]);
+  }, [bindingClasses, editSchoolIds, editTeacherShift]);
   const editAvailableClassOptions = useMemo(
     () => editClassOptions.filter((c) => !editClassIds.includes(c.id)),
     [editClassIds, editClassOptions]
@@ -1367,6 +1374,7 @@ export default function TeachersPage() {
       setSchoolIds([]);
       setCreateClassIds([]);
       setCreateClassPicker("");
+      setCreateTeacherShift("matutino");
       setCreateAsAdmin(false);
       setCreateAdminPeriods(["matutino"]);
       setCreateAdminLocations([]);
@@ -1444,6 +1452,9 @@ export default function TeachersPage() {
     setEditSchoolIds((t.school_ids ?? []).filter(Boolean) as string[]);
     setEditClassIds((t.class_ids ?? []).filter(Boolean) as string[]);
     setEditClassPicker("");
+    const firstClassId = ((t.class_ids ?? []).filter(Boolean) as string[])[0] ?? "";
+    const firstClassPeriod = bindingClasses.find((c) => c.id === firstClassId)?.period?.toLowerCase() ?? "";
+    setEditTeacherShift(firstClassPeriod.startsWith("vesp") ? "vespertino" : "matutino");
     const isManagementAdmin = t.profile_type === "admin_gestao";
     const detectedRole: UserRole =
       t.management_role === "diretor" ||
@@ -2963,6 +2974,19 @@ export default function TeachersPage() {
         </div>
 
         <div style={{ marginTop: 10 }}>
+          <div className={styles.cardSub}>Turno de agendamento do professor</div>
+          <select
+            className={styles.input}
+            style={{ marginTop: 6 }}
+            value={createTeacherShift}
+            onChange={(e) => setCreateTeacherShift(e.target.value as TeacherShift)}
+          >
+            <option value="matutino">Matutino</option>
+            <option value="vespertino">Vespertino</option>
+          </select>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
           <div className={styles.cardSub}>Turmas do professor (selecione ao menos 1)</div>
           {createClassOptions.length ? (
             <div className={styles.classSelectStack}>
@@ -3006,7 +3030,7 @@ export default function TeachersPage() {
             <div className={styles.cardSub} style={{ marginTop: 6 }}>
               {bindingClassesLoading
                 ? "Carregando turmas..."
-                : "Selecione escola(s) para habilitar as turmas."}
+                : `Selecione escola(s) para habilitar as turmas do turno ${createTeacherShift}.`}
             </div>
           )}
         </div>
@@ -3685,6 +3709,19 @@ export default function TeachersPage() {
               </div>
 
               <div>
+                <div className={styles.cardSub}>Turno de agendamento do professor</div>
+                <select
+                  className={styles.input}
+                  style={{ marginTop: 6 }}
+                  value={editTeacherShift}
+                  onChange={(e) => setEditTeacherShift(e.target.value as TeacherShift)}
+                >
+                  <option value="matutino">Matutino</option>
+                  <option value="vespertino">Vespertino</option>
+                </select>
+              </div>
+
+              <div>
                 <div className={styles.cardSub}>Turmas do professor (selecione ao menos 1)</div>
                 {editClassOptions.length ? (
                   <div className={styles.classSelectStack}>
@@ -3728,7 +3765,7 @@ export default function TeachersPage() {
                   <div className={styles.cardSub} style={{ marginTop: 6 }}>
                     {bindingClassesLoading
                       ? "Carregando turmas..."
-                      : "Selecione escola(s) para habilitar as turmas."}
+                      : `Selecione escola(s) para habilitar as turmas do turno ${editTeacherShift}.`}
                   </div>
                 )}
               </div>
