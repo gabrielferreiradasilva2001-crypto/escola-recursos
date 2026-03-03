@@ -38,6 +38,12 @@ type ClassRow = {
   period: string;
   active: boolean;
 };
+type ShiftType = "matutino" | "vespertino";
+type ClassOption = {
+  value: string;
+  label: string;
+  period: ShiftType;
+};
 
 type Reservation = {
   id: string;
@@ -254,6 +260,12 @@ function rangeFromPeriods(periods: number[]) {
   const s = clampPeriodsSelected(periods);
   return { start: s[0], end: s[s.length - 1] };
 }
+function getClassShiftLabel(schoolClass: string): ShiftType | null {
+  const normalized = String(schoolClass ?? "").toLowerCase();
+  if (normalized.includes("vespertino")) return "vespertino";
+  if (normalized.includes("matutino")) return "matutino";
+  return null;
+}
 function pickDefaultItemId(list: Item[]) {
   const preferred = list.find((i) => i.name.trim().toLowerCase() === "sala de informática");
   return preferred?.id ?? list[0]?.id ?? "";
@@ -452,6 +464,8 @@ export default function CalendarPage() {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [teacherId, setTeacherId] = useState<string>("");
   const [defaultSchoolClass, setDefaultSchoolClass] = useState<string>("");
+  const [bookingShift, setBookingShift] = useState<ShiftType>("matutino");
+  const [calendarViewShift, setCalendarViewShift] = useState<ShiftType>("matutino");
   const [classByDatePeriod, setClassByDatePeriod] = useState<Record<string, Record<number, string>>>({});
   const [selectedPeriods, setSelectedPeriods] = useState<number[]>([1]);
   const [selectedPeriodsByDate, setSelectedPeriodsByDate] = useState<Record<string, number[]>>({});
@@ -845,24 +859,56 @@ export default function CalendarPage() {
     const teacher = teachers.find((t) => t.id === teacherId);
     return ((teacher?.class_ids ?? []) as string[]).filter(Boolean);
   }, [teachers, teacherId]);
-  const classOptions = useMemo(() => {
-    const source = isAdmin
-      ? selectedTeacherClassIds.length > 0
-        ? classes.filter((c) => selectedTeacherClassIds.includes(c.id))
-        : classes
-      : classes.filter((c) => selectedTeacherClassIds.includes(c.id));
+  const classOptions = useMemo<ClassOption[]>(() => {
+    const source = classes.filter((c) => selectedTeacherClassIds.includes(c.id));
     return source
       .filter((c) => c.active)
-      .map((c) => ({
-        value: c.name,
-        label: `${c.name} • ${c.period}`,
-      }));
-  }, [classes, isAdmin, selectedTeacherClassIds]);
+      .map((c) => {
+        const rawPeriod = String(c.period ?? "").trim().toLowerCase();
+        const normalizedPeriod: ShiftType = rawPeriod.startsWith("vesp") ? "vespertino" : "matutino";
+        return {
+          value: `${c.name} • ${normalizedPeriod}`,
+          label: `${c.name} • ${normalizedPeriod}`,
+          period: normalizedPeriod,
+        };
+      });
+  }, [classes, selectedTeacherClassIds]);
+  const availableShifts = useMemo<ShiftType[]>(() => {
+    const set = new Set<ShiftType>();
+    classOptions.forEach((opt) => set.add(opt.period));
+    const ordered = (["matutino", "vespertino"] as ShiftType[]).filter((s) => set.has(s));
+    return ordered.length ? ordered : ["matutino"];
+  }, [classOptions]);
+  const visibleClassOptions = useMemo(() => {
+    return classOptions.filter((c) => c.period === bookingShift);
+  }, [classOptions, bookingShift]);
+  useEffect(() => {
+    if (availableShifts.includes(bookingShift)) return;
+    setBookingShift(availableShifts[0] ?? "matutino");
+  }, [availableShifts, bookingShift]);
+  useEffect(() => {
+    setBookingShift(calendarViewShift);
+    setSelectedCellKeys([]);
+    setMsg("");
+  }, [calendarViewShift]);
+  useEffect(() => {
+    if (!visibleClassOptions.length) {
+      setDefaultSchoolClass("");
+      return;
+    }
+    if (!visibleClassOptions.some((c) => c.value === defaultSchoolClass)) {
+      setDefaultSchoolClass(visibleClassOptions[0].value);
+    }
+  }, [visibleClassOptions, defaultSchoolClass]);
   const hasClassOptions = classOptions.length > 0;
-  const missingTeacherClassBinding = !isAdmin && (!teacherId || selectedTeacherClassIds.length === 0);
+  const hasShiftClassOptions = visibleClassOptions.length > 0;
+  const missingTeacherSelection = isAdmin && !teacherId;
+  const missingTeacherClassBinding = !missingTeacherSelection && (!teacherId || selectedTeacherClassIds.length === 0);
   const noClassOptionsMessage = missingTeacherClassBinding
-    ? "Professor sem turmas vinculadas. Ajuste em Cadastros > Usuários."
-    : "Não há turmas cadastradas para esta escola e ano.";
+    ? "Professor sem turmas vinculadas no turno. Ajuste em Cadastros > Usuários."
+    : missingTeacherSelection
+    ? "Selecione o professor para carregar as turmas e horários disponíveis."
+    : `Não há turmas cadastradas para o turno ${bookingShift} nesta escola e ano.`;
   const schoolLocked = schools.length === 1;
   const selectedCellSet = useMemo(() => new Set(selectedCellKeys), [selectedCellKeys]);
   const isDaySelected = useCallback(
@@ -1018,7 +1064,7 @@ export default function CalendarPage() {
     }
     loadMonthForSelectedItem();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItemId, month]);
+  }, [selectedItemId, month, calendarViewShift]);
 
   function buildPeriodMap(status: CellStatus): Record<string, CellStatus> {
     const byPeriod: Record<string, CellStatus> = {};
@@ -1426,7 +1472,7 @@ export default function CalendarPage() {
 
   function validateForm() {
     if (!selectedSchoolId) return "Selecione a escola.";
-    if (!hasClassOptions) return "Cadastre turmas para esta escola antes de agendar.";
+    if (!hasShiftClassOptions) return `Cadastre turmas para o turno ${bookingShift} antes de agendar.`;
     if (!selectedDates.length && !formDate) return "Selecione pelo menos 1 data.";
     if (!teacherId) {
       return isAdmin
@@ -1877,11 +1923,17 @@ export default function CalendarPage() {
       return;
     }
 
+    const filteredReservations = (reservations ?? []).filter((r: Reservation) => {
+      const shift = getClassShiftLabel(r.school_class);
+      if (!shift) return calendarViewShift === "matutino";
+      return shift === calendarViewShift;
+    });
+
     const selected = items.find((i) => i.id === selectedItemId);
     const totalQty = selected?.total_qty ?? 1;
 
     const byResId = new Map<string, Reservation>();
-    (reservations ?? []).forEach((r: Reservation) => byResId.set(r.id, r));
+    filteredReservations.forEach((r: Reservation) => byResId.set(r.id, r));
 
     const reservedQty: Record<string, Record<string, number>> = {};
     const tooltipMap: Record<string, string> = {};
@@ -1960,7 +2012,7 @@ export default function CalendarPage() {
         }
       }
 
-      if (fullCount === 5) newDayStatus[iso] = "full";
+      if (fullCount === periods.length) newDayStatus[iso] = "full";
       else if (fullCount === 0) newDayStatus[iso] = "free";
       else newDayStatus[iso] = "partial";
     }
@@ -3449,7 +3501,7 @@ export default function CalendarPage() {
         }}
       >
         <div className="calendar-month-title" style={{ fontSize: 14, fontWeight: 1100, color: "#0f172a" }}>
-          Calendário do mês
+          Calendário do mês ({calendarViewShift === "matutino" ? "Manhã" : "Tarde"})
           <span className="calendar-month-note" style={{ marginLeft: 8, fontSize: 11, fontWeight: 900, color: "#64748b" }}>
             (clique e arraste para selecionar)
           </span>
@@ -3458,6 +3510,36 @@ export default function CalendarPage() {
           </span>
         </div>
           <div className="calendar-month-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "inline-flex", border: "1px solid rgba(14,165,233,.35)", borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,.85)" }}>
+            <button
+              type="button"
+              onClick={() => setCalendarViewShift("matutino")}
+              className="ux-btn"
+              style={{
+                height: 36,
+                padding: "0 14px",
+                borderRadius: 0,
+                background: calendarViewShift === "matutino" ? "linear-gradient(135deg,#22c55e,#0ea5e9)" : "transparent",
+                color: calendarViewShift === "matutino" ? "#fff" : "#0f172a",
+              }}
+            >
+              Manhã
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarViewShift("vespertino")}
+              className="ux-btn"
+              style={{
+                height: 36,
+                padding: "0 14px",
+                borderRadius: 0,
+                background: calendarViewShift === "vespertino" ? "linear-gradient(135deg,#22c55e,#0ea5e9)" : "transparent",
+                color: calendarViewShift === "vespertino" ? "#fff" : "#0f172a",
+              }}
+            >
+              Tarde
+            </button>
+          </div>
           {selectedCellKeys.length ? (
             <div className="calendar-selected-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, fontWeight: 900, color: "#0f172a" }}>
@@ -4056,6 +4138,24 @@ export default function CalendarPage() {
                         }}
                       >
                         <select
+                          value={bookingShift}
+                          onChange={(e) => setBookingShift(e.target.value as ShiftType)}
+                          style={{
+                            width: "100%",
+                            height: 44,
+                            borderRadius: 14,
+                            border: "1px solid rgba(15,23,42,0.12)",
+                            padding: "0 12px",
+                            fontWeight: 1000,
+                            textAlign: "center",
+                            background: "rgba(255,255,255,0.95)",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {availableShifts.includes("matutino") ? <option value="matutino">Matutino</option> : null}
+                          {availableShifts.includes("vespertino") ? <option value="vespertino">Vespertino</option> : null}
+                        </select>
+                        <select
                           value={defaultSchoolClass}
                           onChange={(e) => setDefaultSchoolClass(e.target.value)}
                           style={{
@@ -4070,7 +4170,7 @@ export default function CalendarPage() {
                           }}
                         >
                           <option value="">Selecionar turma padrão</option>
-                          {classOptions.map((c) => (
+                          {visibleClassOptions.map((c) => (
                             <option key={c.value} value={c.value}>
                               {c.label}
                             </option>
@@ -4238,7 +4338,7 @@ export default function CalendarPage() {
                                           }}
                                         >
                                           <option value="">Usar padrão</option>
-                                          {classOptions.map((c) => (
+                                          {visibleClassOptions.map((c) => (
                                             <option key={c.value} value={c.value}>
                                               {c.label}
                                             </option>
@@ -4324,7 +4424,7 @@ export default function CalendarPage() {
                               }}
                             >
                               <option value="">Usar padrão</option>
-                              {classOptions.map((c) => (
+                              {visibleClassOptions.map((c) => (
                                 <option key={c.value} value={c.value}>
                                   {c.label}
                                 </option>
