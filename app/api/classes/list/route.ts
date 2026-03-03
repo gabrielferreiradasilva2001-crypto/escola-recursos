@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../../teachers/_supabaseAdmin";
 import { requireUser } from "../../_auth";
 import { getViewerSchoolScope, hasSchoolAccess } from "../../_schoolScope";
 import { canAccessPeriod, getAdminScope } from "../../_admin";
+import { getSharedSchoolIdsForSchool } from "../../_resourceGroups";
 
 export async function POST(req: Request) {
   try {
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
     const year = Number(body?.year || 0);
     const schoolId = String(body?.school_id ?? "").trim();
     const period = String(body?.period ?? "").trim();
+    const sharedSchoolIds = schoolId ? await getSharedSchoolIdsForSchool(schoolId) : [];
 
     if (schoolId && !hasSchoolAccess(viewerScope, schoolId)) {
       return NextResponse.json({ ok: true, data: [] });
@@ -32,7 +34,15 @@ export async function POST(req: Request) {
         .select("id,name,school_id,period,active,created_at,schools(name)")
         .order("name");
 
-      if (schoolId) query = query.eq("school_id", schoolId);
+      if (schoolId) {
+        const allowedIds = viewerScope.isSuperAdmin
+          ? sharedSchoolIds
+          : sharedSchoolIds.filter((id) => viewerScope.allowedSchoolIds.includes(id));
+        if (!allowedIds.length) {
+          return { data: [], error: null };
+        }
+        query = query.in("school_id", allowedIds);
+      }
       if (!schoolId && !viewerScope.isSuperAdmin) {
         query = query.in("school_id", viewerScope.allowedSchoolIds);
       }
