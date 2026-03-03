@@ -860,7 +860,11 @@ export default function CalendarPage() {
     return ((teacher?.class_ids ?? []) as string[]).filter(Boolean);
   }, [teachers, teacherId]);
   const classOptions = useMemo<ClassOption[]>(() => {
-    const source = classes.filter((c) => selectedTeacherClassIds.includes(c.id));
+    const source = isAdmin
+      ? selectedTeacherClassIds.length
+        ? classes.filter((c) => selectedTeacherClassIds.includes(c.id))
+        : classes
+      : classes.filter((c) => selectedTeacherClassIds.includes(c.id));
     return source
       .filter((c) => c.active)
       .map((c) => {
@@ -872,7 +876,7 @@ export default function CalendarPage() {
           period: normalizedPeriod,
         };
       });
-  }, [classes, selectedTeacherClassIds]);
+  }, [classes, isAdmin, selectedTeacherClassIds]);
   const availableShifts = useMemo<ShiftType[]>(() => {
     const set = new Set<ShiftType>();
     classOptions.forEach((opt) => set.add(opt.period));
