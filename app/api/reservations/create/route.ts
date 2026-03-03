@@ -22,10 +22,18 @@ type ItemStockRow = {
   name: string;
   school_id: string | null;
 };
+type ShiftType = "matutino" | "vespertino";
 
 function isSchoolDay(d: Date) {
   const wd = d.getDay();
   return wd >= 1 && wd <= 5;
+}
+
+function getClassShiftLabel(schoolClass: string): ShiftType | null {
+  const normalized = String(schoolClass ?? "").toLowerCase();
+  if (normalized.includes("vespertino")) return "vespertino";
+  if (normalized.includes("matutino")) return "matutino";
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -137,19 +145,13 @@ export async function POST(req: Request) {
 
       const { data: reservations, error: resErr } = await supabaseAdmin
         .from("reservations")
-        .select("id,start_period,end_period,status")
+        .select("id,start_period,end_period,status,school_class")
         .eq("use_date", dateISO)
         .in("school_id", sharedSchoolIds.length ? sharedSchoolIds : [String(school_id)])
         .eq("status", "active");
       if (resErr) {
         return NextResponse.json({ error: "Erro ao verificar reservas: " + resErr.message }, { status: 500 });
       }
-
-      const overlapping = (reservations ?? []).filter((r: ReservationRangeRow) => {
-        const a1 = r.start_period;
-        const a2 = r.end_period;
-        return !(a2 < dayStart || a1 > dayEnd);
-      });
 
       const classesForDate = (() => {
         if (classes_by_date_period && classes_by_date_period[dateISO]) {
@@ -161,10 +163,27 @@ export async function POST(req: Request) {
         }
         return classes;
       })();
+      const requestedShifts = new Set<ShiftType>(
+        classesForDate
+          .map((cls) => getClassShiftLabel(String(cls)))
+          .filter((shift): shift is ShiftType => !!shift)
+      );
 
       if (!classesForDate.length) {
         return NextResponse.json({ error: "Selecione pelo menos 1 turma." }, { status: 400 });
       }
+
+      const overlapping = (reservations ?? []).filter(
+        (r: ReservationRangeRow & { school_class?: string | null }) => {
+          if (requestedShifts.size) {
+            const existingShift = getClassShiftLabel(String(r.school_class ?? ""));
+            if (!existingShift || !requestedShifts.has(existingShift)) return false;
+          }
+          const a1 = r.start_period;
+          const a2 = r.end_period;
+          return !(a2 < dayStart || a1 > dayEnd);
+        }
+      );
 
       if (overlapping.length) {
         const ids = overlapping.map((r: ReservationRangeRow) => r.id);

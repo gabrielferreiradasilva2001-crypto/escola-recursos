@@ -1535,18 +1535,25 @@ export default function CalendarPage() {
     const dateLabel = formatDatePtBr(dateISO);
     const { data: reservations, error: resErr } = await supabase
       .from("reservations")
-      .select("id,start_period,end_period,status")
+      .select("id,start_period,end_period,status,school_class")
       .eq("use_date", dateISO)
       .eq("school_id", selectedSchoolId)
       .eq("status", "active");
 
     if (resErr) return `Erro ao verificar reservas em ${dateLabel} (tempo ${startP}): ${resErr.message}`;
 
-    const overlapping = (reservations ?? []).filter((r: AvailabilityReservationRow) => {
-      const a1 = r.start_period;
-      const a2 = r.end_period;
-      return !(a2 < startP || a1 > endP);
-    });
+    const selectedShift = getClassShiftLabel(getClassForDatePeriod(dateISO, startP) || defaultSchoolClass || "");
+    const overlapping = (reservations ?? []).filter(
+      (r: AvailabilityReservationRow & { school_class?: string | null }) => {
+        if (selectedShift) {
+          const existingShift = getClassShiftLabel(String(r.school_class ?? ""));
+          if (!existingShift || existingShift !== selectedShift) return false;
+        }
+        const a1 = r.start_period;
+        const a2 = r.end_period;
+        return !(a2 < startP || a1 > endP);
+      }
+    );
 
     if (!overlapping.length) return null;
 
